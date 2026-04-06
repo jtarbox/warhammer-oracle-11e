@@ -25,8 +25,6 @@ jobs:
 
       - run: npm ci
 
-      - name: Pin npm for OIDC compatibility
-        run: npm install -g npm@10.9.4
 
       - name: Fetch latest BSData
         run: npm run fetch-data
@@ -65,6 +63,8 @@ jobs:
 
       - name: Bump version and publish to npm
         if: steps.diff.outputs.changed == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm version patch --no-git-tag-version
           npm run build
