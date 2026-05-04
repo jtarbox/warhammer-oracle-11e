@@ -5,6 +5,12 @@ import { registerLookupPhase } from "./tools/lookup-phase.js";
 import { registerSearchUnits } from "./tools/search-units.js";
 import { registerCompareUnits } from "./tools/compare-units.js";
 import { registerGameFlow } from "./tools/game-flow.js";
+import { registerWoundCalculator } from "./tools/wound-calculator.js";
+import { registerLookupStratagem } from "./tools/lookup-stratagem.js";
+import { registerSearchStratagems } from "./tools/search-stratagems.js";
+import { registerLookupDetachment } from "./tools/lookup-detachment.js";
+import { registerLookupEnhancement } from "./tools/lookup-enhancement.js";
+import { registerLookupPloy } from "./tools/lookup-ploy.js";
 
 export function registerTools(server: McpServer): void {
   registerLookupUnit(server);
@@ -13,4 +19,10 @@ export function registerTools(server: McpServer): void {
   registerSearchUnits(server);
   registerCompareUnits(server);
   registerGameFlow(server);
+  registerWoundCalculator(server);
+  registerLookupStratagem(server);
+  registerSearchStratagems(server);
+  registerLookupDetachment(server);
+  registerLookupEnhancement(server);
+  registerLookupPloy(server);
 }
