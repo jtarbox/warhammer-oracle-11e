@@ -107,3 +107,52 @@ export type TurnSequence = {
   gameMode: GameMode;
   phases: Phase[];
 };
+
+// === Detachments & Enhancements (from BSData) ===
+
+export type Detachment = {
+  id: string;
+  name: string;
+  faction: string;
+  ability: { name: string; description: string };
+  gameSystem: GameSystem;
+};
+
+export type Enhancement = {
+  id: string;
+  name: string;
+  faction: string;
+  detachment: string;
+  description: string;
+  points: number | null;
+  gameSystem: GameSystem;
+};
+
+// === Stratagems (hand-curated) ===
+
+export type Stratagem = {
+  name: string;
+  faction: string;
+  detachment: string | null;
+  type: "battle_tactic" | "epic_deed" | "strategic_ploy" | "wargear";
+  cpCost: number;
+  phase: string;
+  when: string;
+  target: string;
+  effect: string;
+  restrictions?: string;
+  gameModes: GameMode[];
+};
+
+// === Kill Team Ploys (hand-curated) ===
+
+export type Ploy = {
+  name: string;
+  faction: string;
+  type: "strategic" | "tactical";
+  cpCost: number;
+  when: string;
+  effect: string;
+  restrictions?: string;
+  gameMode: "kill_team";
+};

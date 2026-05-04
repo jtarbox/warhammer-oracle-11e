@@ -5,6 +5,8 @@ import type {
   RangedWeapon,
   MeleeWeapon,
   Ability,
+  Detachment,
+  Enhancement,
   KillTeamOperative,
   KillTeamOperativeProfile,
   KillTeamWeapon,
@@ -227,7 +229,7 @@ export function parseEntryNode(
   };
 }
 
-export { extractFaction, collectAllProfiles };
+export { extractFaction, collectAllProfiles, buildRuleIndex };
 
 // === Public API ===
 
@@ -491,4 +493,310 @@ export function parseCatalogue(xml: string): Unit[] {
         gameSystem: "wh40k-10e" as const,
       };
     });
+}
+
+// === Detachment & Enhancement extraction ===
+
+/**
+ * Extract the detachment ability from a selectionEntry.
+ * Rules may be inline (<rule> elements) or referenced via <infoLink type="rule">.
+ * When using infoLinks, we resolve them against a shared rule index.
+ */
+function extractDetachmentAbility(
+  entry: any,
+  ruleIndex?: Map<string, any>
+): { name: string; description: string } | null {
+  // Collect inline rules
+  const inlineRules = ensureArray(entry.rules?.rule);
+
+  // Collect rules resolved from infoLinks
+  const infoLinks = ensureArray(entry.infoLinks?.infoLink);
+  const linkedRules: any[] = [];
+  if (ruleIndex) {
+    for (const link of infoLinks) {
+      if (link["@_type"] === "rule" && link["@_hidden"] !== "true") {
+        const targetId = link["@_targetId"];
+        if (targetId) {
+          const target = ruleIndex.get(targetId);
+          if (target) {
+            linkedRules.push(target);
+          }
+        }
+      }
+    }
+  }
+
+  const allRules = [...inlineRules, ...linkedRules];
+  if (allRules.length === 0) return null;
+
+  if (allRules.length === 1) {
+    return {
+      name: allRules[0]["@_name"] ?? "",
+      description: allRules[0].description ?? "",
+    };
+  }
+  // Multiple rules: combine with the first rule's name as the primary
+  const descriptions = allRules.map((r: any) => {
+    const name = r["@_name"] ?? "";
+    const desc = r.description ?? "";
+    return `**${name}**\n${desc}`;
+  });
+  return {
+    name: allRules[0]["@_name"] ?? "",
+    description: descriptions.join("\n\n"),
+  };
+}
+
+/**
+ * Build an index of shared rules from a catalogue node.
+ * Rules may be in <rules>, <sharedRules>, or both.
+ */
+function buildRuleIndex(catNode: any): Map<string, any> {
+  const index = new Map<string, any>();
+  const directRules = ensureArray(catNode.rules?.rule);
+  const sharedRules = ensureArray(catNode.sharedRules?.rule);
+  for (const rule of [...directRules, ...sharedRules]) {
+    if (rule["@_id"]) {
+      index.set(rule["@_id"], rule);
+    }
+  }
+  return index;
+}
+
+/**
+ * Find the "Detachment" selectionEntryGroup within a catalogue node
+ * (may be in sharedSelectionEntries or sharedSelectionEntryGroups).
+ * Returns the group containing the actual detachment choices, or null.
+ */
+function findDetachmentGroup(catNode: any, globalIndex?: Map<string, any>): any | null {
+  // Pattern 1: A sharedSelectionEntry named "Detachment" with an entryLink to a group
+  const sharedEntries = ensureArray(catNode.sharedSelectionEntries?.selectionEntry);
+  for (const entry of sharedEntries) {
+    if (entry["@_name"] === "Detachment" && entry["@_type"] === "upgrade") {
+      // Check for inner selectionEntryGroups directly
+      const innerGroups = ensureArray(entry.selectionEntryGroups?.selectionEntryGroup);
+      for (const g of innerGroups) {
+        if (g["@_name"] === "Detachment" || g["@_name"] === "Detachments") {
+          return g;
+        }
+      }
+      // Check entryLinks that point to a "Detachment" group
+      const entryLinks = ensureArray(entry.entryLinks?.entryLink);
+      for (const link of entryLinks) {
+        const linkName = link["@_name"] ?? "";
+        if (linkName === "Detachment" || linkName === "Detachments") {
+          const targetId = link["@_targetId"];
+          if (targetId && globalIndex) {
+            const target = globalIndex.get(targetId);
+            if (target) return target;
+          }
+        }
+      }
+    }
+  }
+
+  // Pattern 2: Direct selectionEntries with name "Detachment"
+  const directEntries = ensureArray(catNode.selectionEntries?.selectionEntry);
+  for (const entry of directEntries) {
+    if (entry["@_name"] === "Detachment" && entry["@_type"] === "upgrade") {
+      const innerGroups = ensureArray(entry.selectionEntryGroups?.selectionEntryGroup);
+      for (const g of innerGroups) {
+        if (g["@_name"] === "Detachment" || g["@_name"] === "Detachments") {
+          return g;
+        }
+      }
+      const entryLinks = ensureArray(entry.entryLinks?.entryLink);
+      for (const link of entryLinks) {
+        const linkName = link["@_name"] ?? "";
+        if (linkName === "Detachment" || linkName === "Detachments") {
+          const targetId = link["@_targetId"];
+          if (targetId && globalIndex) {
+            const target = globalIndex.get(targetId);
+            if (target) return target;
+          }
+        }
+      }
+    }
+  }
+
+  // Pattern 3: The group itself lives in sharedSelectionEntryGroups
+  const sharedGroups = ensureArray(catNode.sharedSelectionEntryGroups?.selectionEntryGroup);
+  for (const group of sharedGroups) {
+    if (group["@_name"] === "Detachment" || group["@_name"] === "Detachments") {
+      return group;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parse detachments from a catalogue node.
+ * Detachments live inside a "Detachment" selectionEntryGroup as child selectionEntries,
+ * each with <rule> elements (inline or via infoLink) describing the detachment ability.
+ *
+ * @param catNode - The catalogue XML node
+ * @param faction - Faction name
+ * @param globalIndex - Global shared entry index for resolving entryLinks
+ * @param globalRuleIndex - Optional pre-built global rule index for resolving infoLinks across catalogues
+ */
+export function parseDetachments(
+  catNode: any,
+  faction: string,
+  globalIndex?: Map<string, any>,
+  globalRuleIndex?: Map<string, any>
+): Detachment[] {
+  const group = findDetachmentGroup(catNode, globalIndex);
+  if (!group) return [];
+
+  // Build a rule index: start from this catalogue, then merge global if provided
+  const ruleIndex = buildRuleIndex(catNode);
+  if (globalRuleIndex) {
+    for (const [id, rule] of globalRuleIndex) {
+      if (!ruleIndex.has(id)) {
+        ruleIndex.set(id, rule);
+      }
+    }
+  }
+
+  const entries = ensureArray(group.selectionEntries?.selectionEntry);
+  const detachments: Detachment[] = [];
+
+  for (const entry of entries) {
+    if (entry["@_hidden"] === "true") continue;
+
+    const ability = extractDetachmentAbility(entry, ruleIndex);
+    if (!ability) continue;
+
+    detachments.push({
+      id: entry["@_id"],
+      name: entry["@_name"],
+      faction,
+      ability,
+      gameSystem: "wh40k-10e" as const,
+    });
+  }
+
+  return detachments;
+}
+
+/**
+ * Extract enhancement description from Abilities profile.
+ */
+function extractEnhancementDescription(entry: any): string {
+  const profiles = ensureArray(entry.profiles?.profile);
+  const abilityProfile = profiles.find(
+    (p: any) => p["@_typeId"] === ABILITY_TYPE_ID
+  );
+  if (!abilityProfile) return "";
+  const chars = ensureArray(abilityProfile.characteristics?.characteristic);
+  return getCharacteristic(chars, "Description");
+}
+
+/**
+ * Extract enhancement points cost.
+ */
+function extractEnhancementPoints(entry: any): number | null {
+  const costs = ensureArray(entry.costs?.cost);
+  const ptsCost = costs.find(
+    (c: any) => c["@_typeId"] === POINTS_COST_TYPE_ID
+  );
+  if (!ptsCost) return null;
+  const val = Number(ptsCost["@_value"]);
+  return isNaN(val) ? null : val;
+}
+
+/**
+ * Find all enhancement groups in the catalogue node.
+ * Enhancement groups are sharedSelectionEntryGroups whose name contains "Enhancements".
+ *
+ * Two patterns exist:
+ * 1. Nested: A parent "Enhancements" group with child selectionEntryGroups
+ *    named "[Detachment] Enhancements", each containing enhancement entries.
+ * 2. Flat: A group named "[Detachment] Enhancements" (or "Enhancements")
+ *    with enhancement entries directly inside, using <comment> for detachment association.
+ * 3. Separate: Additional standalone "[Detachment] Enhancements" groups at
+ *    the sharedSelectionEntryGroups level.
+ */
+export function parseEnhancements(
+  catNode: any,
+  faction: string,
+  globalIndex?: Map<string, any>
+): Enhancement[] {
+  const enhancements: Enhancement[] = [];
+  const seenIds = new Set<string>();
+
+  const sharedGroups = ensureArray(catNode.sharedSelectionEntryGroups?.selectionEntryGroup);
+
+  for (const group of sharedGroups) {
+    const groupName: string = group["@_name"] ?? "";
+    if (!groupName.toLowerCase().includes("enhancement")) continue;
+
+    // Check if this group has child selectionEntryGroups (nested pattern)
+    const childGroups = ensureArray(group.selectionEntryGroups?.selectionEntryGroup);
+
+    if (childGroups.length > 0) {
+      // Nested pattern: child groups are named "[Detachment] Enhancements"
+      for (const childGroup of childGroups) {
+        const childName: string = childGroup["@_name"] ?? "";
+        const detachmentName = childName.replace(/\s*Enhancements\s*$/, "").trim();
+        const entries = ensureArray(childGroup.selectionEntries?.selectionEntry);
+        for (const entry of entries) {
+          if (entry["@_hidden"] === "true") continue;
+          const id = entry["@_id"];
+          if (seenIds.has(id)) continue;
+          seenIds.add(id);
+
+          const description = extractEnhancementDescription(entry);
+          if (!description) continue;
+
+          enhancements.push({
+            id,
+            name: entry["@_name"],
+            faction,
+            detachment: detachmentName,
+            description,
+            points: extractEnhancementPoints(entry),
+            gameSystem: "wh40k-10e" as const,
+          });
+        }
+      }
+    }
+
+    // Also check for direct entries in this group (flat pattern, or standalone detachment group)
+    const directEntries = ensureArray(group.selectionEntries?.selectionEntry);
+    if (directEntries.length > 0) {
+      // Determine detachment from group name or entry's <comment>
+      const isGenericName = groupName === "Enhancements";
+      const groupDetachment = isGenericName
+        ? ""
+        : groupName.replace(/\s*Enhancements\s*$/, "").trim();
+
+      for (const entry of directEntries) {
+        if (entry["@_hidden"] === "true") continue;
+        const id = entry["@_id"];
+        if (seenIds.has(id)) continue;
+        seenIds.add(id);
+
+        const description = extractEnhancementDescription(entry);
+        if (!description) continue;
+
+        // Detachment association: use <comment> if available, else group name
+        const comment: string = entry.comment ?? "";
+        const detachment = comment || groupDetachment || "Unknown";
+
+        enhancements.push({
+          id,
+          name: entry["@_name"],
+          faction,
+          detachment,
+          description,
+          points: extractEnhancementPoints(entry),
+          gameSystem: "wh40k-10e" as const,
+        });
+      }
+    }
+  }
+
+  return enhancements;
 }

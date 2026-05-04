@@ -15,13 +15,16 @@ import {
   parseGameSystem,
   parseKillTeamGameSystem,
   parseKillTeamCatalogue,
+  parseDetachments,
+  parseEnhancements,
+  buildRuleIndex,
   xmlParser,
   ensureArray,
   parseEntryNode,
   extractFaction,
   collectAllProfiles,
 } from "../src/lib/xml-parser.js";
-import type { Unit, KillTeamOperative } from "../src/types.js";
+import type { Unit, Detachment, Enhancement, KillTeamOperative } from "../src/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -71,6 +74,8 @@ interface ParsedCatalogue {
 
 async function fetch40k(): Promise<{
   units: Unit[];
+  detachments: Detachment[];
+  enhancements: Enhancement[];
   rules: { name: string; description: string }[];
 }> {
   console.log("Fetching file tree from BSData/wh40k-10e...");
@@ -131,14 +136,29 @@ async function fetch40k(): Promise<{
 
   console.log(`\n  Global shared entry index: ${globalSharedIndex.size} entries`);
 
+  // Build a global rule index for resolving infoLinks in detachment entries
+  // Some factions (e.g. Necrons) use infoLinks to reference shared rules instead of inline rules
+  const globalRuleIndex = new Map<string, any>();
+  for (const cat of catalogues) {
+    const catRules = buildRuleIndex(cat.raw);
+    for (const [id, rule] of catRules) {
+      if (!globalRuleIndex.has(id)) {
+        globalRuleIndex.set(id, rule);
+      }
+    }
+  }
+  console.log(`  Global rule index: ${globalRuleIndex.size} rules`);
+
   // Build a lookup from catalogue ID → ParsedCatalogue for catalogueLink resolution
   const catalogueById = new Map<string, ParsedCatalogue>();
   for (const cat of catalogues) {
     catalogueById.set(cat.id, cat);
   }
 
-  // ── Phase 2: For each non-library catalogue, resolve units ──
+  // ── Phase 2: For each non-library catalogue, resolve units, detachments, enhancements ──
   const allUnits: Unit[] = [];
+  const allDetachments: Detachment[] = [];
+  const allEnhancements: Enhancement[] = [];
 
   for (const cat of catalogues) {
     if (cat.isLibrary) {
@@ -148,6 +168,32 @@ async function fetch40k(): Promise<{
 
     const faction = extractFaction(cat.name);
     const catUnits: Unit[] = [];
+
+    // 2-pre: Extract detachments and enhancements from this catalogue
+    const catDetachments = parseDetachments(cat.raw, faction, globalSharedIndex, globalRuleIndex);
+    allDetachments.push(...catDetachments);
+
+    const catEnhancements = parseEnhancements(cat.raw, faction, globalSharedIndex);
+    allEnhancements.push(...catEnhancements);
+
+    // Also check linked library catalogues for detachments/enhancements
+    const catLinks = ensureArray(cat.raw.catalogueLinks?.catalogueLink);
+    for (const catLink of catLinks) {
+      const targetCatId = catLink["@_targetId"];
+      if (!targetCatId) continue;
+      const linkedCat = catalogueById.get(targetCatId);
+      if (!linkedCat) continue;
+
+      const linkedDetachments = parseDetachments(linkedCat.raw, faction, globalSharedIndex, globalRuleIndex);
+      allDetachments.push(...linkedDetachments);
+
+      const linkedEnhancements = parseEnhancements(linkedCat.raw, faction, globalSharedIndex);
+      allEnhancements.push(...linkedEnhancements);
+    }
+
+    if (catDetachments.length > 0 || catEnhancements.length > 0) {
+      console.log(`    → ${catDetachments.length} detachments, ${catEnhancements.length} enhancements`);
+    }
 
     // 2a: Direct inline units from this catalogue (selectionEntries + own sharedSelectionEntries)
     const directEntries = ensureArray(cat.raw.selectionEntries?.selectionEntry);
@@ -177,7 +223,7 @@ async function fetch40k(): Promise<{
     }
 
     // 2c: Resolve catalogueLinks — import units from linked catalogues
-    const catLinks = ensureArray(cat.raw.catalogueLinks?.catalogueLink);
+    // (catLinks already declared above for detachment/enhancement resolution)
     for (const catLink of catLinks) {
       const targetCatId = catLink["@_targetId"];
       if (!targetCatId) continue;
@@ -235,7 +281,28 @@ async function fetch40k(): Promise<{
     }
   }
 
-  console.log(`\n40K Total: ${finalUnits.length} units, ${allRules.length} shared rules`);
+  // Global dedup detachments and enhancements by ID+faction
+  const finalDetachments: Detachment[] = [];
+  const detachmentSeen = new Set<string>();
+  for (const det of allDetachments) {
+    const key = `${det.faction}::${det.id}`;
+    if (!detachmentSeen.has(key)) {
+      detachmentSeen.add(key);
+      finalDetachments.push(det);
+    }
+  }
+
+  const finalEnhancements: Enhancement[] = [];
+  const enhancementSeen = new Set<string>();
+  for (const enh of allEnhancements) {
+    const key = `${enh.faction}::${enh.id}`;
+    if (!enhancementSeen.has(key)) {
+      enhancementSeen.add(key);
+      finalEnhancements.push(enh);
+    }
+  }
+
+  console.log(`\n40K Total: ${finalUnits.length} units, ${finalDetachments.length} detachments, ${finalEnhancements.length} enhancements, ${allRules.length} shared rules`);
 
   // Log per-faction breakdown
   const factionCounts = new Map<string, number>();
@@ -243,12 +310,29 @@ async function fetch40k(): Promise<{
     factionCounts.set(unit.faction, (factionCounts.get(unit.faction) ?? 0) + 1);
   }
   const sortedFactions = [...factionCounts.entries()].sort((a, b) => b[1] - a[1]);
-  console.log("\nPer-faction breakdown:");
+  console.log("\nPer-faction unit breakdown:");
   for (const [faction, count] of sortedFactions) {
     console.log(`  ${faction}: ${count}`);
   }
 
-  return { units: finalUnits, rules: allRules };
+  // Log detachment/enhancement breakdown
+  const detFactionCounts = new Map<string, number>();
+  for (const det of finalDetachments) {
+    detFactionCounts.set(det.faction, (detFactionCounts.get(det.faction) ?? 0) + 1);
+  }
+  const enhFactionCounts = new Map<string, number>();
+  for (const enh of finalEnhancements) {
+    enhFactionCounts.set(enh.faction, (enhFactionCounts.get(enh.faction) ?? 0) + 1);
+  }
+  console.log("\nPer-faction detachment/enhancement breakdown:");
+  const allFactions = new Set([...detFactionCounts.keys(), ...enhFactionCounts.keys()]);
+  for (const faction of [...allFactions].sort()) {
+    const dets = detFactionCounts.get(faction) ?? 0;
+    const enhs = enhFactionCounts.get(faction) ?? 0;
+    console.log(`  ${faction}: ${dets} detachments, ${enhs} enhancements`);
+  }
+
+  return { units: finalUnits, detachments: finalDetachments, enhancements: finalEnhancements, rules: allRules };
 }
 
 /** Index all shared selection entries from a catalogue/gameSystem node into the global map */
@@ -414,7 +498,7 @@ async function fetchKillTeam(): Promise<{
 // ── Main ─────────────────────────────────────────────────────────────────
 
 async function main() {
-  const { units, rules: rules40k } = await fetch40k();
+  const { units, detachments, enhancements, rules: rules40k } = await fetch40k();
   const { operatives, rules: rulesKT } = await fetchKillTeam();
 
   // ── Write src/data/units.ts ──
@@ -432,6 +516,38 @@ async function main() {
 
   writeFileSync(unitsPath, unitsContent, "utf-8");
   console.log(`Wrote ${unitsPath} (${units.length} units)`);
+
+  // ── Write src/data/detachments.ts ──
+  const detachmentsPath = join(ROOT, "src", "data", "detachments.ts");
+  const detachmentsContent = [
+    "// Auto-generated by scripts/fetch-data.ts — do not edit manually",
+    `// Generated: ${new Date().toISOString()}`,
+    `// Source: https://github.com/${REPO_40K}`,
+    "",
+    'import type { Detachment } from "../types.js";',
+    "",
+    `export const DETACHMENTS: Detachment[] = ${JSON.stringify(detachments, null, 2)};`,
+    "",
+  ].join("\n");
+
+  writeFileSync(detachmentsPath, detachmentsContent, "utf-8");
+  console.log(`Wrote ${detachmentsPath} (${detachments.length} detachments)`);
+
+  // ── Write src/data/enhancements.ts ──
+  const enhancementsPath = join(ROOT, "src", "data", "enhancements.ts");
+  const enhancementsContent = [
+    "// Auto-generated by scripts/fetch-data.ts — do not edit manually",
+    `// Generated: ${new Date().toISOString()}`,
+    `// Source: https://github.com/${REPO_40K}`,
+    "",
+    'import type { Enhancement } from "../types.js";',
+    "",
+    `export const ENHANCEMENTS: Enhancement[] = ${JSON.stringify(enhancements, null, 2)};`,
+    "",
+  ].join("\n");
+
+  writeFileSync(enhancementsPath, enhancementsContent, "utf-8");
+  console.log(`Wrote ${enhancementsPath} (${enhancements.length} enhancements)`);
 
   // ── Write src/data/rules.ts ──
   const rulesPath = join(ROOT, "src", "data", "rules.ts");

@@ -15,7 +15,7 @@
 
 ---
 
-Ask your AI assistant about datasheets, keywords, phase sequences, and more. Covers Warhammer 40,000, Combat Patrol, and Kill Team.
+Ask your AI assistant about datasheets, stratagems, detachments, enhancements, keywords, phase sequences, wound math, and more. Covers Warhammer 40,000, Combat Patrol, and Kill Team.
 
 [![warhammer-oracle MCP server](https://glama.ai/mcp/servers/gregario/warhammer-oracle/badges/card.svg)](https://glama.ai/mcp/servers/gregario/warhammer-oracle)
 
@@ -123,6 +123,72 @@ Show the full turn sequence for a game mode, or highlight where you are in the t
 
 **Parameters:** `current_phase` (optional), `game_mode` (optional, default: `40k`)
 
+### `lookup_stratagem`
+
+Look up a Warhammer 40,000 stratagem by name. Returns CP cost, phase timing, target, and effect.
+
+```
+"What does Fire Overwatch do?"
+"Show me the Command Re-roll stratagem"
+```
+
+**Parameters:** `name` (required), `faction` (optional), `phase` (optional), `detachment` (optional)
+
+### `search_stratagems`
+
+Search stratagems by name, faction, phase, or detachment. Returns a compact list (max 10).
+
+```
+"What stratagems can I use in the Fight phase?"
+"Show me Gladius Task Force stratagems"
+```
+
+**Parameters:** `query` (required), `faction` (optional), `phase` (optional), `detachment` (optional)
+
+### `lookup_detachment`
+
+Look up a detachment by name. Returns the detachment ability, available enhancements, and associated stratagems.
+
+```
+"Show me the Gladius Task Force detachment"
+"What does the Warhost detachment do for Aeldari?"
+```
+
+**Parameters:** `name` (required), `faction` (optional)
+
+### `lookup_enhancement`
+
+Look up a character enhancement by name. Returns points cost, detachment, and effect.
+
+```
+"What does Adept of the Codex do?"
+"Show me Aeldari enhancements"
+```
+
+**Parameters:** `name` (required), `faction` (optional), `detachment` (optional)
+
+### `lookup_ploy`
+
+Look up a Kill Team ploy by name. Returns type (strategic/tactical), CP cost, timing, and effect.
+
+```
+"What does the Bolster ploy do in Kill Team?"
+"Show me Legionaries ploys"
+```
+
+**Parameters:** `name` (required), `faction` (optional), `type` (optional: `strategic`, `tactical`)
+
+### `wound_calculator`
+
+Calculate expected damage output for an attack profile against a target. Handles re-rolls, weapon keywords (Lethal Hits, Devastating Wounds, Sustained Hits, Torrent), invulnerable saves, and Feel No Pain.
+
+```
+"Calculate damage: 10 attacks, BS3+, S5 AP-1 D2 vs T4 Sv3+"
+"How much damage does a lascannon do to a Leman Russ?"
+```
+
+**Parameters:** `attacks`, `hit_skill`, `strength`, `toughness`, `armour_save`, `damage` (all required); `armour_penetration`, `invulnerable_save`, `feel_no_pain`, `reroll_hits`, `reroll_wounds`, `weapon_keywords`, `wounds_per_model`, `game_mode` (all optional)
+
 ## Data
 
 All data is embedded at build time — no network calls at runtime.
@@ -131,6 +197,10 @@ All data is embedded at build time — no network calls at runtime.
 |---|---|---|
 | 40K unit datasheets | 2,642 | [BSData/wh40k-10e](https://github.com/BSData/wh40k-10e) |
 | Kill Team operatives | 506 | [BSData/wh40k-killteam](https://github.com/BSData/wh40k-killteam) |
+| Detachments | 991 | BSData (auto-extracted) |
+| Enhancements | 3,908 | BSData (auto-extracted) |
+| Stratagems | 17 | Hand-curated (core + examples) |
+| Kill Team ploys | 14 | Hand-curated (universal + popular factions) |
 | Shared rules | 33 (40K) + 22 (KT) | BSData |
 | Curated keywords | 25 | Hand-written, plain English |
 | Game mode sequences | 3 | Hand-curated (40K, Combat Patrol, Kill Team) |
