@@ -62,10 +62,13 @@ jobs:
           git add src/data/
           git commit -m "chore: sync BSData ($(date -u +%Y-%m-%d))"
 
+      - name: Upgrade npm for OIDC trusted publishing
+        if: steps.diff.outputs.changed == 'true'
+        run: npm install -g npm@latest
+
       - name: Bump version, sync manifests, publish, tag, release
         if: steps.diff.outputs.changed == 'true'
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
