@@ -3,7 +3,7 @@ import { registerTools } from "./register-tools.js";
 
 export function createServer(version?: string): McpServer {
   const server = new McpServer({
-    name: "warhammer-oracle",
+    name: "warhammer-oracle-11e",
     version: version ?? "0.0.0",
   });
   registerTools(server);

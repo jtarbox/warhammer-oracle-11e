@@ -1,19 +1,18 @@
-<!-- mcp-name: io.github.gregario/warhammer-oracle -->
+<!-- mcp-name: io.github.jtarbox/warhammer-oracle-11e -->
 <p align="center">
-  <h1 align="center">Warhammer Oracle</h1>
+  <h1 align="center">Warhammer Oracle 11e</h1>
   <p align="center">Warhammer 40K rules, unit stats, and game flow. An MCP server.</p>
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/warhammer-oracle"><img src="https://img.shields.io/npm/v/warhammer-oracle.svg" alt="npm version"></a>
-  <a href="https://www.npmjs.com/package/warhammer-oracle"><img src="https://img.shields.io/npm/dm/warhammer-oracle.svg" alt="npm downloads"></a>
-  <a href="https://github.com/gregario/warhammer-oracle/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT Licence"></a>
+  <a href="https://github.com/jtarbox/warhammer-oracle-11e/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT Licence"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node.js 18+"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-purple.svg" alt="MCP Compatible"></a>
-  <a href="https://glama.ai/mcp/servers/gregario/warhammer-oracle"><img src="https://glama.ai/mcp/servers/gregario/warhammer-oracle/badges/score.svg" alt="warhammer-oracle MCP server"></a>
 </p>
 
 ---
+
+This is a fork of [gregario/warhammer-oracle](https://github.com/gregario/warhammer-oracle), extended with permanent Warhammer 40,000 11th Edition support (11e is now the default game mode; 10th Edition remains fully supported alongside it). See [docs/design/11e-support.md](docs/design/11e-support.md) for the reasoning and design. Not published to npm — install directly from this GitHub repo (see [Installation](#installation)).
 
 Ask your AI assistant about datasheets, stratagems, detachments, enhancements, keywords, phase sequences, wound math, and more. Covers Warhammer 40,000 (10th and 11th Edition), Combat Patrol, and Kill Team.
 
@@ -21,14 +20,10 @@ Ask your AI assistant about datasheets, stratagems, detachments, enhancements, k
 
 ## Installation
 
-```bash
-npx warhammer-oracle
-```
-
-Or install globally:
+This fork isn't published to npm — install directly from GitHub. `npx` will clone the repo, install dependencies, and build it on first run (via the `prepare` script); subsequent runs use npx's cache.
 
 ```bash
-npm install -g warhammer-oracle
+npx -y github:jtarbox/warhammer-oracle-11e
 ```
 
 ## Configuration
@@ -40,9 +35,9 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "warhammer-oracle": {
+    "warhammer-oracle-11e": {
       "command": "npx",
-      "args": ["-y", "warhammer-oracle"]
+      "args": ["-y", "github:jtarbox/warhammer-oracle-11e"]
     }
   }
 }
@@ -51,7 +46,7 @@ Add to your `claude_desktop_config.json`:
 ### Claude Code
 
 ```bash
-claude mcp add warhammer-oracle -- npx -y warhammer-oracle
+claude mcp add warhammer-oracle-11e -- npx -y github:jtarbox/warhammer-oracle-11e
 ```
 
 ## Tools
@@ -233,6 +228,6 @@ npm run build
 
 ## License
 
-MIT (for the MCP server code).
+MIT (for the MCP server code). This project is a fork of [gregario/warhammer-oracle](https://github.com/gregario/warhammer-oracle) (MIT); see [LICENSE](LICENSE) for the original copyright notice.
 
 Unit data sourced from the [BSData](https://github.com/BSData) community project — [wh40k-10e](https://github.com/BSData/wh40k-10e), [wh40k-11e](https://github.com/BSData/wh40k-11e), and [wh40k-killteam](https://github.com/BSData/wh40k-killteam). Game rules and army rules are the intellectual property of Games Workshop. This tool provides reference data for personal use during gameplay.
